@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agentic RAG — Corrective / Self-RAG Demo</title>
+<style>
+  body { font-family: Georgia, 'Times New Roman', serif; margin: 0; background: #f7f5f0; color: #1d2433; }
+  main { max-width: 860px; margin: 0 auto; padding: 32px 20px 64px; }
+  h1 { font-size: 2rem; margin-bottom: 4px; }
+  h2 { margin-top: 40px; border-bottom: 2px solid #28418c; padding-bottom: 6px; color: #28418c; }
+  .sub { color: #5a6376; margin-top: 0; }
+  .card { background: #fff; border: 1px solid #ddd6c4; border-radius: 8px; padding: 18px 22px; margin: 16px 0; }
+  .q { font-weight: bold; }
+  .cite { background: #eef2ff; color: #28418c; border-radius: 4px; padding: 0 5px; font-size: 0.85em; white-space: nowrap; }
+  .meta { color: #5a6376; font-size: 0.9em; font-family: ui-monospace, Menlo, monospace; }
+  pre { background: #141a29; color: #d7e0f5; padding: 14px 16px; border-radius: 8px; overflow-x: auto; font-size: 0.82rem; line-height: 1.5; }
+  table { border-collapse: collapse; width: 100%; background: #fff; }
+  th, td { border: 1px solid #ddd6c4; padding: 7px 10px; text-align: left; font-size: 0.92rem; }
+  th { background: #28418c; color: #fff; }
+  .pass { color: #1c7a34; font-weight: bold; }
+  .abstain { background: #fdf3e3; border-color: #e5cf9f; }
+  code { font-family: ui-monospace, Menlo, monospace; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Agentic RAG</h1>
+  <p class="sub">A corrective / self-RAG system over a bundled 12-document corpus: retrieve &rarr; grade &rarr; rewrite if weak &rarr; generate with citations &rarr; verify groundedness &rarr; abstain when the evidence is not there. Fully offline: pure-Python BM25 + a deterministic extractive model. This page is a <em>recorded</em> run — no live backend.</p>
+
+  <h2>Recorded run 1 — the corrective loop fires</h2>
+  <div class="card">
+    <p class="q">Q: How do I pay less money for computers?</p>
+    <p>A: Cloud bills are dominated by a small number of services, so cost optimisation starts by tagging every resource with an owner and a project. <span class="cite">[10-cloud-cost-optimization]</span> Without tags, a bill can be reported only as a single total, and no team can be held accountable for its share. <span class="cite">[10-cloud-cost-optimization]</span> Reserved capacity is the largest single saving lever for steady workloads. <span class="cite">[10-cloud-cost-optimization]</span> The trade-off is flexibility: the commitment is paid for whether or not the capacity is actually used, so reservations should cover only the stable baseline of a workload, never its peaks. <span class="cite">[10-cloud-cost-optimization]</span> Monitoring data typically shows many virtual machines running at a small fraction of their provisioned CPU, and moving each workload to the smallest instance size that still meets its performance target cuts its hourly cost directly. <span class="cite">[10-cloud-cost-optimization]</span></p>
+    <p class="meta">grounded=True &middot; rewrites=1 &middot; generations=1 &middot; abstained=False</p>
+  </div>
+  <p>The first retrieval was graded weak, so the graph rewrote the query before answering:</p>
+  <pre>retrieve(query='How do I pay less money for computers?')
+  -&gt; [('06-ecommerce-checkout', 1.62), ('01-cloud-data-warehouse', 1.55)]
+grade_retrieval: relevant=False (top_score=1.62 (floor 2.0),
+  term_coverage=0.20 (floor 0.34), rare_term_coverage=0.20 (floor 0.5))
+rewrite_query #1: 'i pay less money computer cost billing discount compute'
+retrieve(query='i pay less money computer cost billing discount compute')
+  -&gt; [('10-cloud-cost-optimization', 8.23), ('01-cloud-data-warehouse', 5.21),
+      ('06-ecommerce-checkout', 3.23)]
+grade_retrieval: relevant=True (top_score=8.23, term_coverage=0.56,
+  rare_term_coverage=0.50)
+generate #1: 5 claims
+check_groundedness: grounded=True support=[1.0, 1.0, 1.0, 1.0, 1.0]</pre>
+
+  <h2>Recorded run 2 — a direct answer</h2>
+  <div class="card">
+    <p class="q">Q: What does a data lakehouse add on top of a data lake?</p>
+    <p>A: A data lakehouse combines the low-cost object storage of a data lake with the management features of a data warehouse. <span class="cite">[02-data-lakehouse]</span> Files remain in open formats such as Parquet, but a table format layer adds structure and guarantees on top of those files. <span class="cite">[02-data-lakehouse]</span> The table format layer adds transactions to the lake. <span class="cite">[02-data-lakehouse]</span> The same layer provides schema enforcement, which rejects writes whose columns do not match the declared table schema, and schema evolution, which allows columns to be added in a controlled way. <span class="cite">[02-data-lakehouse]</span> Unlike a traditional warehouse, a lakehouse keeps data in open file formats, so multiple engines — a SQL engine, a Spark job, or a machine learning training run — can read the same tables without exporting copies between systems. <span class="cite">[02-data-lakehouse]</span></p>
+    <p class="meta">grounded=True &middot; rewrites=0 &middot; generations=1 &middot; abstained=False</p>
+  </div>
+
+  <h2>Recorded run 3 — abstention on an unanswerable question</h2>
+  <div class="card abstain">
+    <p class="q">Q: What was the exact checkout conversion rate of the online store in March 2019?</p>
+    <p>A: Insufficient evidence: the bundled corpus does not contain enough relevant, verifiable material to answer this question.</p>
+    <p class="meta">citations: (none — abstained) &middot; rewrites=2 &middot; generations=0</p>
+    <p>The question shares topical words with the checkout document, but its distinctive terms — <em>exact</em>, <em>conversion</em>, <em>March</em>, <em>2019</em> — appear nowhere in the corpus, so the grader keeps the retrieval weak through both rewrites and the graph abstains instead of inventing a statistic.</p>
+  </div>
+
+  <h2>Evaluation summary (recorded, 14 fixed questions)</h2>
+  <table>
+    <tr><th>Metric</th><th>Score</th><th>Meaning</th></tr>
+    <tr><td>Mean answer containment (11 answerable)</td><td><strong>0.955</strong></td><td>Fraction of gold terms present in the answer</td></tr>
+    <tr><td>Mean citation precision (11 answerable)</td><td><strong>1.000</strong></td><td>Fraction of cited documents that are expected sources</td></tr>
+    <tr><td>Abstention accuracy (all 14)</td><td><strong>1.000</strong></td><td>Abstained exactly when the question was unanswerable</td></tr>
+    <tr><td>Abstention accuracy (3 unanswerable)</td><td><strong>1.000</strong></td><td>All three unanswerable questions correctly abstained</td></tr>
+    <tr><td>Per-question result</td><td><span class="pass">14 / 14 PASS</span></td><td>Weakest item: q06 containment 0.50 (answer cites the OTDR fault-location sentence but not the word &ldquo;distance&rdquo;)</td></tr>
+  </table>
+
+  <h2>Run it yourself</h2>
+  <pre>PYTHONPATH=src python3 -m agentic_rag "What is a canary deployment?"
+PYTHONPATH=src python3 -m agentic_rag --trace "How do I pay less money for computers?"
+PYTHONPATH=src python3 -m agentic_rag --eval
+python3 -m pytest   # 8 tests, offline</pre>
+  <p class="sub">Corpus topics: cloud data warehouses, data lakehouses, streaming pipelines, 5G networks, fibre broadband operations, e-commerce checkout, e-commerce inventory, CI/CD, code review, cloud cost optimisation, API design, database indexing.</p>
+</main>
+</body>
+</html>
